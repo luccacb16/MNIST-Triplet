@@ -5,7 +5,9 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
-from models.mini_inception_resnet_v1 import MiniInceptionResNetV1 
+from models.mini_inception_resnet_v1 import MiniInceptionResNetV1
+from models.omoindrot import TripletNetwork
+
 from data import download_dataset
 from utils import parse_args, aug_transform, simple_transform, TripletDataset, TripletLoss
 from triplet_selection import hard_negative_triplet_selection
@@ -95,7 +97,7 @@ if __name__ == '__main__':
     triplet_loss = TripletLoss(margin=margin)
     dataloader = DataLoader(triplet_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers)
     
-    model = MiniInceptionResNetV1(emb_size=EMB_SIZE).to(device)
+    model = TripletNetwork(emb_size=EMB_SIZE).to(device)
     model = torch.compile(model)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)

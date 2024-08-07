@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
-from torchvision.transforms import Compose, ToTensor, Normalize, Lambda, RandomRotation, RandomAffine
+from torchvision.transforms import Compose, ToTensor, Normalize, RandomRotation, RandomAffine
 from PIL import Image
 import pandas as pd
 import numpy as np
-import torch.nn.functional as F
 from tqdm import tqdm
 import os
 from sklearn.metrics import roc_curve, auc

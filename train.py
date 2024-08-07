@@ -3,7 +3,7 @@ from tqdm import tqdm
 import os
 
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 
 from models.mini_inception_resnet_v1 import MiniInceptionResNetV1 
 from data import download_dataset

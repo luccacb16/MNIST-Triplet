@@ -7,6 +7,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from models.omoindrot import Omoindrot
+from models.mini import MiniNet
+
 from data import download_dataset
 from utils import parse_args, simple_transform, TripletDataset, BalancedBatchSampler, TripletLoss
 from triplet_selection import semi_hard_triplet_mining, hard_negative_triplet_mining
@@ -50,9 +52,9 @@ def train(
             with torch.cuda.amp.autocast(dtype=dtype):
                 embeddings = model(imgs)
                 
-                # Trocar a estratégia de mining após 20% das epochs
-                if (epoch+1) < (epochs+1) * 0.2:
-                    triplets = semi_hard_triplet_mining(embeddings=embeddings, labels=labels, margin=margin, device=device)
+                # Trocar a estratégia de mining após 40% das epochs
+                if (epoch+1) < (epochs+1) * 0.4:
+                    triplets = semi_hard_triplet_mining(embeddings=embeddings, labels=labels, margin=margin, device=device, hardest=False)
                 else:
                     triplets = hard_negative_triplet_mining(embeddings=embeddings, labels=labels, device=device)
                     
@@ -107,7 +109,7 @@ if __name__ == '__main__':
     
     triplet_loss = TripletLoss(margin=margin)
     
-    model = Omoindrot(emb_size=EMB_SIZE).to(device)
+    model = MiniNet(emb_size=EMB_SIZE).to(device)
     model = torch.compile(model)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)

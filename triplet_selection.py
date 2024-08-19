@@ -25,7 +25,8 @@ def hard_negative_triplet_mining(embeddings: torch.Tensor, labels: torch.Tensor,
     
     return torch.tensor(triplets, dtype=torch.long, device=device)
 
-def semi_hard_triplet_mining(embeddings: torch.Tensor, labels: torch.Tensor, margin: float = 0.5, device: str = 'cuda'):
+def semi_hard_triplet_mining(embeddings: torch.Tensor, labels: torch.Tensor, margin: float = 0.5, device: str = 'cuda', 
+                             hardest: bool = True):
     distance_matrix = torch.cdist(embeddings, embeddings, p=2)
 
     triplets = []
@@ -56,8 +57,13 @@ def semi_hard_triplet_mining(embeddings: torch.Tensor, labels: torch.Tensor, mar
             hardest_semi_hard_negative_index = valid_negatives[torch.argmin(valid_negative_distances[semi_hard_mask])]
             triplets.append((i, random_positive_index, hardest_semi_hard_negative_index.item()))
         else:
-            # Se nenhum semi-hard negative, escolher o hardest negative
-            hardest_negative_index = negative_indices[torch.argmin(valid_negative_distances)]
-            triplets.append((i, random_positive_index, hardest_negative_index.item()))
-
+            if hardest:
+                # Se nenhum semi-hard negative, escolher o hardest negative
+                hardest_negative_index = negative_indices[torch.argmin(valid_negative_distances)]
+                triplets.append((i, random_positive_index, hardest_negative_index.item()))
+            else:
+                # Se nenhum semi-hard negative, escolher um negative aleatório
+                random_negative_index = np.random.choice(negative_indices.cpu().numpy())
+                triplets.append((i, random_positive_index, random_negative_index))
+            
     return torch.tensor(triplets, dtype=torch.long, device=device)

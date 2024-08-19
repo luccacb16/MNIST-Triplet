@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.init as init
 
 class L2NormSquared(nn.Module):
     def __init__(self):
@@ -18,6 +19,16 @@ class MiniNet(nn.Module):
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
         self.conv3 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
         self.fc1 = nn.Linear(64 * 3 * 3, emb_size)
+
+        init.kaiming_normal_(self.conv1.weight, nonlinearity='relu')
+        init.kaiming_normal_(self.conv2.weight, nonlinearity='relu')
+        init.kaiming_normal_(self.conv3.weight, nonlinearity='relu')
+        init.kaiming_normal_(self.fc1.weight, nonlinearity='relu')
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))

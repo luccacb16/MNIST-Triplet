@@ -213,9 +213,6 @@ class MNISTPairsDataset(Dataset):
             img1 = self.transform(img1)
             img2 = self.transform(img2)
         
-        #img1 = img1.expand(3, -1, -1)
-        #img2 = img2.expand(3, -1, -1)
-        
         return img1, img2, label
 
 def calculate_distances(model: nn.Module, pairs: pd.DataFrame, batch_size=32, transform=None, device='cuda') -> pd.DataFrame:

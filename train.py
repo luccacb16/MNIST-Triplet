@@ -15,7 +15,12 @@ torch.set_float32_matmul_precision('high')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
+dtype = torch.bfloat16
+if torch.cuda.is_available():
+    gpu_properties = torch.cuda.get_device_properties(0)
+
+    if gpu_properties.major < 8:
+        dtype = torch.float16
         
 EMB_SIZE = 64
         

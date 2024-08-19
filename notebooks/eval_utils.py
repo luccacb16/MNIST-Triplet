@@ -57,7 +57,6 @@ def get_pairs(ids_df: pd.DataFrame, n_pairs: int = None) -> pd.DataFrame:
 
     return pd.DataFrame(pairs, columns=['img1', 'img2', 'label'])
 
-
 def plot_distribution_and_ROC(pairs: pd.DataFrame, model_name: str, target_far=1e-3) -> float:
     col_name = 'distance'
     
@@ -102,7 +101,7 @@ def eval_epochs(epochs_path: str, pairs: pd.DataFrame, model_class: nn.Module, b
     models_name = os.listdir(epochs_path)
     models_name_sorted = sorted(models_name, key=lambda x: int(x.replace('.pt', '').split('_')[1]))
         
-    modelo = model_class().to(device)
+    modelo = model_class(emb_size=64).to(device)
     modelo.eval()
     
     for model in models_name_sorted:        
@@ -214,8 +213,8 @@ class MNISTPairsDataset(Dataset):
             img1 = self.transform(img1)
             img2 = self.transform(img2)
         
-        img1 = img1.expand(3, -1, -1)
-        img2 = img2.expand(3, -1, -1)
+        #img1 = img1.expand(3, -1, -1)
+        #img2 = img2.expand(3, -1, -1)
         
         return img1, img2, label
 
@@ -237,5 +236,27 @@ def calculate_distances(model: nn.Module, pairs: pd.DataFrame, batch_size=32, tr
 
     pairs['distance'] = distances
     return pairs
+
+class MNISTSingleDataset(Dataset):
+    def __init__(self, images_df, transform=None):
+        self.labels = images_df['label'].values
+        self.pixel_values = images_df.drop(columns=['label']).values
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        image = self.pixel_values[idx].reshape(28, 28).astype(np.uint8)
+        label = self.labels[idx]
+        
+        image = Image.fromarray(image)
+        
+        if self.transform:
+            image = self.transform(image)
+        
+        #image = image.expand(3, -1, -1)
+        
+        return image, label
 
 # --------------------------------------------------------------------------------------------------------

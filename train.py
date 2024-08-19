@@ -1,29 +1,23 @@
 import pandas as pd
+import numpy as np
 from tqdm import tqdm
 import os
 
 import torch
 from torch.utils.data import DataLoader
 
-from models.mini_inception_resnet_v1 import MiniInceptionResNetV1
-from models.omoindrot import TripletNetwork
-
+from models.omoindrot import Omoindrot
 from data import download_dataset
-from utils import parse_args, aug_transform, simple_transform, TripletDataset, TripletLoss
-from triplet_selection import hard_negative_triplet_selection
+from utils import parse_args, simple_transform, TripletDataset, BalancedBatchSampler, TripletLoss
+from triplet_selection import semi_hard_triplet_mining, hard_negative_triplet_mining
 
 torch.set_float32_matmul_precision('high')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-tensor_type = torch.bfloat16
-if torch.cuda.is_available():
-    gpu_properties = torch.cuda.get_device_properties(0)
-
-    if gpu_properties.major < 8:
-        tensor_type = torch.float16
         
-EMB_SIZE = 128
+dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
+        
+EMB_SIZE = 64
         
 # --------------------------------------------------------------------------------------------------------
 
@@ -33,6 +27,7 @@ def train(
     optimizer: torch.optim.Optimizer,
     triplet_loss: TripletLoss,
     epochs: int = 8,
+    margin: float = 0.5,
     checkpoint_path: str = './checkpoints/',
     device: str = 'cuda',
 ):
@@ -47,22 +42,26 @@ def train(
             imgs, labels = imgs.to(device), labels.to(device)
             optimizer.zero_grad()
             
-            with torch.cuda.amp.autocast(dtype=tensor_type):
+            with torch.cuda.amp.autocast(dtype=dtype):
                 embeddings = model(imgs)
-                triplets = hard_negative_triplet_selection(embeddings=embeddings, labels=labels, device=device)
+                
+                # Trocar a estratégia de mining após 20% das epochs
+                if (epoch+1) < (epochs+1) * 0.2:
+                    triplets = semi_hard_triplet_mining(embeddings=embeddings, labels=labels, margin=margin, device=device)
+                else:
+                    triplets = hard_negative_triplet_mining(embeddings=embeddings, labels=labels, device=device)
+                    
                 loss = triplet_loss(triplets, embeddings)
+                
                 total_triplets += triplets.shape[1]
                 total_batches += 1
                 
             loss.backward()
             optimizer.step()
             
-        losses.append(loss.item())
-        print(f"Epoch [{epoch+1}/{epochs}] | Loss: {loss.item()} | Média de triplets: {total_triplets / total_batches:.0f}")
+        print(f"Epoch [{epoch+1}/{epochs}] | Loss: {loss.item()}")
         torch.save(model.state_dict(), os.path.join(checkpoint_path, f'epoch_{epoch+1}.pt'))
         
-    return losses
-            
 # --------------------------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
@@ -91,23 +90,30 @@ if __name__ == '__main__':
     print()
     print(f'Device: {device}')
     print(f'Device name: {torch.cuda.get_device_name()}')
-    print(f'Using tensor type: {tensor_type}\n')
+    print(f'Using tensor type: {dtype}\n')
     
-    triplet_dataset = TripletDataset(train_df, transform=simple_transform, tensor_type=tensor_type)
-    triplet_loss = TripletLoss(margin=margin)
+    triplet_dataset = TripletDataset(train_df, transform=simple_transform, dtype=dtype)
+    
+    #n_classes = len(np.unique(triplet_dataset.labels))
+    #n_samples = batch_size // n_classes
+    #sampler = BalancedBatchSampler(triplet_dataset.labels, n_classes=n_classes, n_samples=n_samples)
+    
     dataloader = DataLoader(triplet_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers)
     
-    model = TripletNetwork(emb_size=EMB_SIZE).to(device)
+    triplet_loss = TripletLoss(margin=margin)
+    
+    model = Omoindrot(emb_size=EMB_SIZE).to(device)
     model = torch.compile(model)
     
-    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     
-    losses = train(
+    train(
         model           = model,
         dataloader      = dataloader,
         optimizer       = optimizer,
         triplet_loss    = triplet_loss,
         epochs          = epochs,
         checkpoint_path = CHECKPOINT_PATH,
+        margin          = margin,
         device          = device,
     )

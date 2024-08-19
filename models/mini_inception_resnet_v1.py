@@ -2,6 +2,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class L2NormSquared(nn.Module):
+    def __init__(self):
+        super(L2NormSquared, self).__init__()
+
+    def forward(self, x):
+        return x.pow(2).sum(1)
+
 class BasicConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, **kwargs):
         super(BasicConv2d, self).__init__()
@@ -45,7 +52,9 @@ class InceptionResnetBlock(nn.Module):
 class MiniInceptionResNetV1(nn.Module):
     def __init__(self, emb_size=128):
         super(MiniInceptionResNetV1, self).__init__()
-        self.conv2d_1a = BasicConv2d(3, 32, kernel_size=3, stride=2)
+        self.l2 = L2NormSquared()
+        
+        self.conv2d_1a = BasicConv2d(1, 32, kernel_size=3, stride=2)
         self.conv2d_2a = BasicConv2d(32, 32, kernel_size=3)
         self.conv2d_2b = BasicConv2d(32, 64, kernel_size=3, padding=1)
         self.maxpool_3a = nn.MaxPool2d(3, stride=2)
@@ -78,6 +87,6 @@ class MiniInceptionResNetV1(nn.Module):
         x = self.relu(x)
         
         # L2 Normalization
-        x = F.normalize(x, p=2, dim=1)
+        x = self.l2(x)
         
         return x

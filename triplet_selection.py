@@ -60,4 +60,4 @@ def semi_hard_triplet_mining(embeddings: torch.Tensor, labels: torch.Tensor, mar
             hardest_negative_index = negative_indices[torch.argmin(valid_negative_distances)]
             triplets.append((i, random_positive_index, hardest_negative_index.item()))
 
-        return torch.tensor(triplets, dtype=torch.long, device=device)
+    return torch.tensor(triplets, dtype=torch.long, device=device)

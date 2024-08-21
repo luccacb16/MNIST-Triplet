@@ -99,6 +99,7 @@ def plot_distribution_and_ROC(pairs: pd.DataFrame, model_name: str, target_far=1
 
 def eval_epochs(epochs_path: str, pairs: pd.DataFrame, model_class: nn.Module, batch_size: int = 32, transform = None, device: str = 'cuda', target_far=1e-2) -> None:
     models_name = os.listdir(epochs_path)
+    models_name = [model for model in models_name if not model.startswith('bons')]
     models_name_sorted = sorted(models_name, key=lambda x: int(x.replace('.pt', '').split('_')[1]))
         
     modelo = model_class(emb_size=64).to(device)
@@ -112,7 +113,7 @@ def eval_epochs(epochs_path: str, pairs: pd.DataFrame, model_class: nn.Module, b
         
         pairs_dist = calculate_distances(modelo, pairs, batch_size=batch_size, transform=transform, device=device)
         
-        _, low_far = plot_distribution_and_ROC(pairs_dist, model.__class__.__name__, target_far)
+        _, low_far = plot_distribution_and_ROC(pairs_dist, model, target_far)
         
         # Low FAR threshold
         acc = accuracy(pairs_dist, low_far)

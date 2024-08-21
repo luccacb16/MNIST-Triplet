@@ -7,11 +7,10 @@ import torch
 from torch.utils.data import DataLoader
 
 from models.omoindrot import Omoindrot
-from models.mini import MiniNet
 
 from data import download_dataset
-from utils import parse_args, simple_transform, TripletDataset, BalancedBatchSampler, TripletLoss
-from triplet_selection import semi_hard_triplet_mining, hard_negative_triplet_mining
+from utils.utils import parse_args, simple_transform, TripletDataset, BalancedBatchSampler, TripletLoss, ValTripletsDataset, calc_val_loss, save_losses
+from triplet_mining import semi_hard_triplet_mining, hard_negative_triplet_mining
 
 torch.set_float32_matmul_precision('high')
 
@@ -25,49 +24,60 @@ if torch.cuda.is_available():
         dtype = torch.float16
         
 EMB_SIZE = 64
+CHANGE_MINING_STRATEGY = 0.4
+N_VAL_TRIPLETS = 128
         
 # --------------------------------------------------------------------------------------------------------
 
 def train(
     model: torch.nn.Module,
     dataloader: DataLoader,
+    val_dataloader: DataLoader,
     optimizer: torch.optim.Optimizer,
     triplet_loss: TripletLoss,
-    epochs: int = 8,
-    margin: float = 0.5,
+    scheduler: torch.optim.lr_scheduler = None,
+    epochs: int = 20,
+    margin: float = 0.7,
     checkpoint_path: str = './checkpoints/',
     device: str = 'cuda',
 ):
+    
+    train_losses = []
+    val_losses = []
+    
     model.train()
     
-    losses = []
     for epoch in range(epochs):
-        total_triplets = 0
-        total_batches = 0
         for imgs, labels in tqdm(dataloader, desc=f"Epoch [{epoch+1}/{epochs}]", unit='batch'):
-            total_triplets += len(imgs)
             imgs, labels = imgs.to(device), labels.to(device)
             optimizer.zero_grad()
             
             with torch.cuda.amp.autocast(dtype=dtype):
                 embeddings = model(imgs)
                 
-                # Trocar a estratégia de mining após 40% das epochs
-                if (epoch+1) < (epochs+1) * 0.4:
+                # Troca a estratégia de mineração de triplets após CHANGE_MINING_STRATEGY% das epochs
+                if (epoch+1) < int((epochs+1) * CHANGE_MINING_STRATEGY):
                     triplets = semi_hard_triplet_mining(embeddings=embeddings, labels=labels, margin=margin, device=device, hardest=False)
                 else:
                     triplets = hard_negative_triplet_mining(embeddings=embeddings, labels=labels, device=device)
-                    
-                loss = triplet_loss(triplets, embeddings)
                 
-                total_triplets += triplets.shape[1]
-                total_batches += 1
+                loss = triplet_loss(triplets, embeddings)
                 
             loss.backward()
             optimizer.step()
             
-        print(f"Epoch [{epoch+1}/{epochs}] | Loss: {loss.item()}")
+        if scheduler is not None:
+            scheduler.step()
+            
+        # Validation loss
+        val_loss = calc_val_loss(model, val_dataloader, triplet_loss, device)
+        val_losses.append(val_loss)
+        train_losses.append(loss.item())
+            
+        print(f"Epoch [{epoch+1}/{epochs}] | loss: {loss.item()} | val_loss: {val_loss} | LR: {optimizer.param_groups[0]['lr']:.0e}")
         torch.save(model.state_dict(), os.path.join(checkpoint_path, f'epoch_{epoch+1}.pt'))
+        
+    return train_losses, val_losses
         
 # --------------------------------------------------------------------------------------------------------
 
@@ -82,45 +92,60 @@ if __name__ == '__main__':
     data_path = args.data_path
     CHECKPOINT_PATH = args.checkpoint_path
     
-    # Cria o diretório para salvar os checkpoints
     if not os.path.exists(CHECKPOINT_PATH):
         os.makedirs(CHECKPOINT_PATH)
     
-    # Baixa o dataset MNIST
+    # MNIST dataset download
     download_dataset(data_path=data_path)
-    
-    train_df = pd.read_csv(os.path.join(data_path, 'mnist_train.csv'))
-    if num_images > len(train_df):
-        num_images = len(train_df)
-    train_df = train_df.sample(n=num_images, replace=True).reset_index(drop=True)
     
     print()
     print(f'Device: {device}')
     print(f'Device name: {torch.cuda.get_device_name()}')
     print(f'Using tensor type: {dtype}\n')
     
-    triplet_dataset = TripletDataset(train_df, transform=simple_transform, dtype=dtype)
+    # Carregando datasets
+    train_df = pd.read_csv(os.path.join(data_path, 'mnist_train.csv'))
+    if num_images > len(train_df):
+        num_images = len(train_df)
+    train_df = train_df.sample(n=num_images).reset_index(drop=True)
     
-    #n_classes = len(np.unique(triplet_dataset.labels))
-    #n_samples = batch_size // n_classes
-    #sampler = BalancedBatchSampler(triplet_dataset.labels, n_classes=n_classes, n_samples=n_samples)
+    # Loader de validação
+    test_df = pd.read_csv(os.path.join(data_path, 'mnist_test.csv'))
+    val_triplets = ValTripletsDataset(test_df, n_triplets=N_VAL_TRIPLETS)
+    val_dataloader = DataLoader(val_triplets, batch_size=N_VAL_TRIPLETS, shuffle=False, pin_memory=True, num_workers=num_workers)
     
-    dataloader = DataLoader(triplet_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers)
+    # Loader de treino
+    triplet_dataset = TripletDataset(train_df, transform=simple_transform)
     
+    n_classes = len(np.unique(triplet_dataset.labels))
+    sampler = BalancedBatchSampler(triplet_dataset.labels, n_classes=n_classes, batch_size=batch_size)
+    
+    dataloader = DataLoader(triplet_dataset, batch_sampler=sampler,
+                            pin_memory=True, num_workers=num_workers)
+    
+    # Loss
     triplet_loss = TripletLoss(margin=margin)
     
-    model = MiniNet(emb_size=EMB_SIZE).to(device)
+    # Modelo
+    model = Omoindrot().to(device)
     model = torch.compile(model)
     
+    # Otimizador e scheduler
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
     
-    train(
+    train_losses, val_losses = train(
         model           = model,
         dataloader      = dataloader,
+        val_dataloader  = val_dataloader,
         optimizer       = optimizer,
         triplet_loss    = triplet_loss,
+        scheduler       = scheduler,
         epochs          = epochs,
         checkpoint_path = CHECKPOINT_PATH,
         margin          = margin,
         device          = device,
     )
+    
+    # Salva a imagem com os resultados
+    save_losses(train_losses, val_losses, os.path.join(CHECKPOINT_PATH, 'losses.png'))

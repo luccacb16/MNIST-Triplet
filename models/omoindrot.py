@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# Modelo obtido de: https://github.com/omoindrot/tensorflow-triplet-loss
+
 class Omoindrot(nn.Module):
     def __init__(self, emb_size=64):
         super(Omoindrot, self).__init__()

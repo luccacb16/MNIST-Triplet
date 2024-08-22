@@ -12,6 +12,8 @@
 
 <br>
 
-![Resultado](imgs/metricas.png)
+<img src="docs/metricas.png" alt="Resultado" width="800">
 
-![Plot](imgs/tsne.png)
+<img src="docs/losses.png" alt="Losses" width="800">
+
+<img src="docs/tsne.png" alt="t-SNE Plot" width="800">

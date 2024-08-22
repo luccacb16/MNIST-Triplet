@@ -26,6 +26,7 @@ if torch.cuda.is_available():
 EMB_SIZE = 64
 CHANGE_MINING_STRATEGY = 0.4
 N_VAL_TRIPLETS = 128
+DOCS_PATH = './docs/'
         
 # --------------------------------------------------------------------------------------------------------
 
@@ -61,7 +62,11 @@ def train(
                 else:
                     triplets = hard_negative_triplet_mining(embeddings=embeddings, labels=labels, device=device)
                 
-                loss = triplet_loss(triplets, embeddings)
+                anchor_embeddings = embeddings[triplets[:, 0]]
+                positive_embeddings = embeddings[triplets[:, 1]]
+                negative_embeddings = embeddings[triplets[:, 2]]
+                
+                loss = triplet_loss(anchor_embeddings, positive_embeddings, negative_embeddings)
                 
             loss.backward()
             optimizer.step()
@@ -74,7 +79,7 @@ def train(
         val_losses.append(val_loss)
         train_losses.append(loss.item())
             
-        print(f"Epoch [{epoch+1}/{epochs}] | loss: {loss.item()} | val_loss: {val_loss} | LR: {optimizer.param_groups[0]['lr']:.0e}")
+        print(f"Epoch [{epoch+1}/{epochs}] | loss: {loss.item():.6f} | val_loss: {val_loss:.6f} | LR: {optimizer.param_groups[0]['lr']:.0e}")
         torch.save(model.state_dict(), os.path.join(checkpoint_path, f'epoch_{epoch+1}.pt'))
         
     return train_losses, val_losses
@@ -148,4 +153,4 @@ if __name__ == '__main__':
     )
     
     # Salva a imagem com os resultados
-    save_losses(train_losses, val_losses, os.path.join(CHECKPOINT_PATH, 'losses.png'))
+    save_losses(train_losses, val_losses, DOCS_PATH)

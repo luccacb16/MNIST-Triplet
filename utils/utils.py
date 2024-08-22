@@ -83,19 +83,15 @@ class TripletLoss(nn.Module):
         super(TripletLoss, self).__init__()
         self.margin = margin
 
-    def forward(self, triplets, embeddings):
-        anchor_embeddings = embeddings[triplets[:, 0]]
-        positive_embeddings = embeddings[triplets[:, 1]]
-        negative_embeddings = embeddings[triplets[:, 2]]
-        
+    def forward(self, anchor_embeddings, positive_embeddings, negative_embeddings):
         pos_diff = anchor_embeddings - positive_embeddings
         neg_diff = anchor_embeddings - negative_embeddings
-        
+
         positive_distances = torch.norm(pos_diff, p=2, dim=1)
         negative_distances = torch.norm(neg_diff, p=2, dim=1)
-        
+
         losses = F.relu(positive_distances - negative_distances + self.margin)
-        
+
         return losses.mean()
 
 # --------------------------------------------------------------------------------------------------------
@@ -136,9 +132,11 @@ def get_val_triplets(test_df: pd.DataFrame, n: int = 128) -> torch.Tensor:
     return torch.tensor(triplets, dtype=torch.long)
 
 class ValTripletsDataset(Dataset):
-    def __init__(self, test_df: pd.DataFrame, n_triplets: int = 128):
-        self.test_data = torch.tensor(test_df.iloc[:, 1:].values, dtype=torch.float32)
+    def __init__(self, test_df: pd.DataFrame, transform=None, n_triplets: int = 128):
+        self.test_data = torch.tensor(test_df.iloc[:, 1:].values, dtype=torch.float32).reshape(-1, 1, 28, 28)
         self.test_labels = torch.tensor(test_df['label'].values, dtype=torch.long)
+        self.transform = transform
+        
         self.triplets = get_val_triplets(test_df, n_triplets)
 
     def __len__(self):
@@ -146,48 +144,42 @@ class ValTripletsDataset(Dataset):
 
     def __getitem__(self, index):
         anchor_idx, pos_idx, neg_idx = self.triplets[index]
+        
         anchor_img = self.test_data[anchor_idx]
         pos_img = self.test_data[pos_idx]
         neg_img = self.test_data[neg_idx]
-        return anchor_img, pos_img, neg_img
+        
+        if self.transform:
+            anchor_img = self.transform(anchor_img)
+            pos_img = self.transform(pos_img)
+            neg_img = self.transform(neg_img)
+        
+        return (anchor_img, pos_img, neg_img), torch.tensor([anchor_idx, pos_idx, neg_idx], dtype=torch.long) 
     
 def calc_val_loss(model, val_loader, triplet_loss, device):
-    """
-    Calcula a val_loss usando o conjunto de validação.
-
-    Args:
-        model (torch.nn.Module): Modelo para gerar os embeddings.
-        val_loader (torch.utils.data.DataLoader): DataLoader para o conjunto de validação.
-        triplet_loss (TripletLoss): Função de perda de triplet.
-        device (torch.device): Dispositivo para realizar os cálculos.
-
-    Returns:
-        float: Valor da val_loss.
-    """
-    
     model.eval()
     total_loss = 0
     num_batches = 0
 
     with torch.no_grad():
-        for anchors, positives, negatives in val_loader:
+        for (anchors, positives, negatives), _ in val_loader:
             anchors = anchors.to(device)
             positives = positives.to(device)
             negatives = negatives.to(device)
-
+        
             # Gerar os embeddings
             anchor_embeddings = model(anchors)
             positive_embeddings = model(positives)
             negative_embeddings = model(negatives)
 
             # Calcular a perda de triplet
-            triplets = torch.stack([anchor_embeddings, positive_embeddings, negative_embeddings], dim=1).to(device)
-            loss = triplet_loss(triplets)
+            loss = triplet_loss(anchor_embeddings, positive_embeddings, negative_embeddings)
             total_loss += loss.item()
             num_batches += 1
 
     val_loss = total_loss / num_batches
     model.train()
+    
     return val_loss
 
 def save_losses(train_losses: list, val_losses: list, save_path: str = './imgs/'):

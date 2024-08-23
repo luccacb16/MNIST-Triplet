@@ -4,7 +4,7 @@ Implementação e treinamento de uma rede neural siamesa que extrai embeddings d
 
 ## **Motivação**
 
-A motivação para a implementação desse projeto é resultado da tentativa da implmentação do paper FaceNet. Essa implementação serviu como estudo e prática do treinamento com Triplet Loss e do processo de triplet mining/triplet selection. O próximo passo é a implementação e o treinamento da FaceNet. 
+A motivação para a implementação desse projeto é resultado da tentativa da implementação do paper FaceNet. Essa implementação serviu como estudo e prática do treinamento com Triplet Loss e do processo de triplet mining/triplet selection. O próximo passo é a implementação e o treinamento da FaceNet. 
 
 ## **Treinamento**
 

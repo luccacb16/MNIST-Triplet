@@ -44,7 +44,7 @@ O download do dataset MNIST é feito automaticamente ao executar o script de tre
 
 ## **Avaliação**
 
-A avaliação do modelo é feita utilizando o notebook eval.ipynb, e é realizada para cada epoch.
+A avaliação do modelo é feita utilizando o notebook eval.ipynb e é realizada para cada epoch.
 
 1024 pares de imagens (512 positivos e 512 negativos) são gerados aleatóriamente para o cálcula das métricas:
 - **Accuracy**: o threshold utilizado para o cálculo da acurácia é baseado no FAR (False Acceptance Rate) de 0.1%.

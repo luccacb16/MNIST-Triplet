@@ -48,15 +48,11 @@ A avaliação do modelo é feita utilizando o notebook eval.ipynb e é realizada
 
 1024 pares de imagens (512 positivos e 512 negativos) são gerados aleatóriamente para o cálcula das métricas:
 - **Accuracy**: o threshold utilizado para o cálculo da acurácia é baseado no FAR (False Acceptance Rate) de 0.1%.
-$$
-accuracy = \frac{\sum_{i=1}^{n} (distance_i < threshold) == label_i}{n}
-$$
+<img src="https://latex.codecogs.com/svg.image?accuracy=\frac{\sum_{i=1}^{n}(distance_i<threshold)==label_i}{n}" title="accuracy=\frac{\sum_{i=1}^{n}(distance_i<threshold)==label_i}{n}" />
 Sendo a distância calculada utilizando a norma L2 entre os embeddings dos pares.
-- **VAL (Validation Rate)**: 
-$$
-VAL = \frac{TP}{TP + FN}
-$$
 
+- **VAL (Validation Rate)**: 
+<img src="https://latex.codecogs.com/svg.image?VAL=\frac{TP}{TP&plus;FN}" title="VAL=\frac{TP}{TP+FN}" />
 É possível visualizar a média e o desvio padrão das distâncias dos pares positivos e , além do threshold baseado no FAR. São plotados os gráficos da distribuição das distâncias dos pares positivos e negativos e um t-SNE plot dos embeddings. Ao final do treinamento, é salvo também um gráfico das perdas de treinamento e validação a cada epoch.
 
 ## **Resultados**

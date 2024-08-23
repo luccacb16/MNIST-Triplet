@@ -1,6 +1,6 @@
 # **MNIST Triplet Loss**
 
-Implementação de uma rede neural siamesa que extrai embeddings de imagens do dataset MNIST utilizando a função de perda Triplet Loss
+Implementação e treinamento de uma rede neural siamesa que extrai embeddings de imagens do dataset MNIST utilizando a função de perda Triplet Loss
 
 ## **Motivação**
 

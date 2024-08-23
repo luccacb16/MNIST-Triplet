@@ -209,9 +209,9 @@ def parse_args():
     parser.add_argument('--num_images', type=int, default=59904, help='Número de imagens (default: 59904)')
     parser.add_argument('--batch_size', type=int, default=256, help='Tamanho do batch (default: 256)')
     parser.add_argument('--epochs', type=int, default=20, help='Número de epochs (default: 20)')
-    parser.add_argument('--margin', type=float, default=1, help='Margem para triplet loss (default: 1)')
+    parser.add_argument('--margin', type=float, default=1, help='Margem para triplet loss (default: 1.0)')
     parser.add_argument('--num_workers', type=int, default=0, help='Número de workers para o DataLoader (default: 0)')
-    parser.add_argument('--data_path', type=str, default='./data/', help='Caminho para o dataset (default: ./data)')
+    parser.add_argument('--data_path', type=str, default='./data/', help='Caminho para o dataset (default: ./data/)')
     parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/', help='Caminho para salvar os checkpoints (default: ./checkpoints/)')
     
     return parser.parse_args()

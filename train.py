@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import os
+import wandb
+from dotenv import load_dotenv
 
 import torch
 from torch.utils.data import DataLoader
@@ -9,10 +11,14 @@ from torch.utils.data import DataLoader
 from models.omoindrot import Omoindrot
 
 from data import download_dataset
-from utils.utils import parse_args, simple_transform, TripletDataset, BalancedBatchSampler, TripletLoss, ValTripletsDataset, calc_val_loss, save_losses
+from utils.utils import parse_args, simple_transform, TripletDataset, BalancedBatchSampler, TripletLoss, ValTripletsDataset, calc_val_loss
+from utils.eval_utils import get_pairs, MNISTPairsDataset, calc_accuracy 
 from triplet_mining import semi_hard_triplet_mining, hard_negative_triplet_mining
 
+load_dotenv()
+
 torch.set_float32_matmul_precision('high')
+torch.backends.cudnn.benchmark = True
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -24,9 +30,8 @@ if torch.cuda.is_available():
         dtype = torch.float16
         
 EMB_SIZE = 64
-CHANGE_MINING_STRATEGY = 0.4
+CHANGE_MINING_STRATEGY = 8
 N_VAL_TRIPLETS = 128
-DOCS_PATH = './docs/'
         
 # --------------------------------------------------------------------------------------------------------
 
@@ -34,6 +39,7 @@ def train(
     model: torch.nn.Module,
     dataloader: DataLoader,
     val_dataloader: DataLoader,
+    acc_dataloader: DataLoader,
     optimizer: torch.optim.Optimizer,
     triplet_loss: TripletLoss,
     scheduler: torch.optim.lr_scheduler = None,
@@ -42,9 +48,6 @@ def train(
     checkpoint_path: str = './checkpoints/',
     device: str = 'cuda',
 ):
-    
-    train_losses = []
-    val_losses = []
     
     model.train()
     
@@ -57,10 +60,10 @@ def train(
                 embeddings = model(imgs)
                 
                 # Troca a estratégia de mineração de triplets após CHANGE_MINING_STRATEGY% das epochs
-                if (epoch+1) < int((epochs+1) * CHANGE_MINING_STRATEGY):
-                    triplets = semi_hard_triplet_mining(embeddings=embeddings, labels=labels, margin=margin, device=device, hardest=False)
-                else:
+                if CHANGE_MINING_STRATEGY > 0 and (epoch+1) > CHANGE_MINING_STRATEGY:
                     triplets = hard_negative_triplet_mining(embeddings=embeddings, labels=labels, device=device)
+                else:
+                    triplets = semi_hard_triplet_mining(embeddings=embeddings, labels=labels, margin=margin, device=device, hardest=False)
                 
                 anchor_embeddings = embeddings[triplets[:, 0]]
                 positive_embeddings = embeddings[triplets[:, 1]]
@@ -71,18 +74,20 @@ def train(
             loss.backward()
             optimizer.step()
             
+            val_loss = calc_val_loss(model, val_dataloader, triplet_loss, device)
+            
+            # Log
+            wandb.log({'epoch': epoch, 'train_loss': loss.item(), 'val_loss': val_loss, 'lr': optimizer.param_groups[0]['lr']})
+        
+        # Acurácia
+        epoch_accuracy = calc_accuracy(model, acc_dataloader, device)
+        wandb.log({'epoch': epoch, 'accuracy': epoch_accuracy})
+        
         if scheduler is not None:
             scheduler.step()
             
-        # Validation loss
-        val_loss = calc_val_loss(model, val_dataloader, triplet_loss, device)
-        val_losses.append(val_loss)
-        train_losses.append(loss.item())
-            
-        print(f"Epoch [{epoch+1}/{epochs}] | loss: {loss.item():.6f} | val_loss: {val_loss:.6f} | LR: {optimizer.param_groups[0]['lr']:.0e}")
+        print(f"Epoch [{epoch+1}/{epochs}] | accuracy: {epoch_accuracy:4f} | loss: {loss.item():.6f} | val_loss: {val_loss:.6f} | LR: {optimizer.param_groups[0]['lr']:.0e}")
         torch.save(model.state_dict(), os.path.join(checkpoint_path, f'epoch_{epoch+1}.pt'))
-        
-    return train_losses, val_losses
         
 # --------------------------------------------------------------------------------------------------------
 
@@ -96,6 +101,23 @@ if __name__ == '__main__':
     num_workers = args.num_workers
     data_path = args.data_path
     CHECKPOINT_PATH = args.checkpoint_path
+    CHANGE_MINING_STRATEGY = args.change_mining_strategy
+    LR_STEP = args.lr_step
+    
+    config = {
+        'num_images': num_images,
+        'batch_size': batch_size,
+        'epochs': epochs,
+        'margin': margin,
+        'num_workers': num_workers,
+        'data_path': data_path,
+        'checkpoint_path': CHECKPOINT_PATH,
+        'change_mining_strategy': CHANGE_MINING_STRATEGY,
+        'lr_step': LR_STEP,
+    }
+    
+    wandb.login(key=os.environ['WANDB_API_KEY'])
+    wandb.init(project='mnist-triplet-loss', config=config)
     
     if not os.path.exists(CHECKPOINT_PATH):
         os.makedirs(CHECKPOINT_PATH)
@@ -114,10 +136,14 @@ if __name__ == '__main__':
         num_images = len(train_df)
     train_df = train_df.sample(n=num_images).reset_index(drop=True)
     
-    # Loader de validação
+    # Loaders de validação e acurácia
     test_df = pd.read_csv(os.path.join(data_path, 'mnist_test.csv'))
     val_triplets = ValTripletsDataset(test_df, n_triplets=N_VAL_TRIPLETS)
     val_dataloader = DataLoader(val_triplets, batch_size=N_VAL_TRIPLETS, shuffle=False, pin_memory=True, num_workers=num_workers)
+    
+    acc_pairs = get_pairs(test_df, N_VAL_TRIPLETS)
+    acc_dataset = MNISTPairsDataset(acc_pairs, transform=simple_transform)
+    acc_dataloader = DataLoader(acc_dataset, batch_size=N_VAL_TRIPLETS, shuffle=False, pin_memory=True, num_workers=num_workers)
     
     # Loader de treino
     triplet_dataset = TripletDataset(train_df, transform=simple_transform)
@@ -134,15 +160,18 @@ if __name__ == '__main__':
     # Modelo
     model = Omoindrot().to(device)
     model = torch.compile(model)
+    wandb.watch(model, log='all', log_freq=100)
     
     # Otimizador e scheduler
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
+    #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=LR_STEP, gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.1 if epoch >= LR_STEP else 1.0)
     
-    train_losses, val_losses = train(
+    train(
         model           = model,
         dataloader      = dataloader,
         val_dataloader  = val_dataloader,
+        acc_dataloader  = acc_dataloader,
         optimizer       = optimizer,
         triplet_loss    = triplet_loss,
         scheduler       = scheduler,
@@ -151,6 +180,3 @@ if __name__ == '__main__':
         margin          = margin,
         device          = device,
     )
-    
-    # Salva a imagem com os resultados
-    save_losses(train_losses, val_losses, DOCS_PATH)

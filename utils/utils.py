@@ -129,12 +129,12 @@ def get_val_triplets(test_df: pd.DataFrame, n: int = 128) -> torch.Tensor:
 
         triplets.append((anchor_idx, positive_idx, negative_idx))
 
-    return torch.tensor(triplets, dtype=torch.long)
+    return torch.tensor(triplets, dtype=torch.int16)
 
 class ValTripletsDataset(Dataset):
     def __init__(self, test_df: pd.DataFrame, transform=None, n_triplets: int = 128):
         self.test_data = torch.tensor(test_df.iloc[:, 1:].values, dtype=torch.float32).reshape(-1, 1, 28, 28)
-        self.test_labels = torch.tensor(test_df['label'].values, dtype=torch.long)
+        self.test_labels = torch.tensor(test_df['label'].values, dtype=torch.int16)
         self.transform = transform
         
         self.triplets = get_val_triplets(test_df, n_triplets)
@@ -154,7 +154,7 @@ class ValTripletsDataset(Dataset):
             pos_img = self.transform(pos_img)
             neg_img = self.transform(neg_img)
         
-        return (anchor_img, pos_img, neg_img), torch.tensor([anchor_idx, pos_idx, neg_idx], dtype=torch.long) 
+        return (anchor_img, pos_img, neg_img), torch.tensor([anchor_idx, pos_idx, neg_idx], dtype=torch.int16) 
     
 def calc_val_loss(model, val_loader, triplet_loss, device):
     model.eval()
@@ -213,5 +213,7 @@ def parse_args():
     parser.add_argument('--num_workers', type=int, default=0, help='Número de workers para o DataLoader (default: 0)')
     parser.add_argument('--data_path', type=str, default='./data/', help='Caminho para o dataset (default: ./data/)')
     parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/', help='Caminho para salvar os checkpoints (default: ./checkpoints/)')
-    
+    parser.add_argument('--change_mining_strategy', type=int, default=0, help='Mudar a estratégia de mineração de triplets de semi-hard para hard')
+    parser.add_argument('--lr_step', type=int, default=10, help='Número de epochs para reduzir a taxa de aprendizado')
+        
     return parser.parse_args()
